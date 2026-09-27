@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleExecutable</key><string>YiDuTranslator</string>
+  <key>CFBundleIdentifier</key><string>local.codex.YiDuTranslator</string>
+  <key>CFBundleName</key><string>译读</string>
+  <key>CFBundleDisplayName</key><string>译读</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>1.0.1</string>
+  <key>CFBundleVersion</key><string>2</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>NSHumanReadableCopyright</key><string>个人本地翻译工具</string>
+  <key>NSAccessibilityUsageDescription</key><string>仅在你按下查词或翻译快捷键时读取当前选中文字。</string>
+  <key>NSScreenCaptureUsageDescription</key><string>仅在你主动截图时读取所选区域，用于翻译与解释。</string>
+</dict></plist>

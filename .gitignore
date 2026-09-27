@@ -1,0 +1,15 @@
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.app/
+work/
+*.log
+.env
+.env.*
+*.p8
+*.p12
+*.pem
+*.mobileprovision

@@ -34,6 +34,7 @@ final class AppSettings: ObservableObject {
     private let defaults: UserDefaults
     @Published var floatingEnabled: Bool { didSet { defaults.set(floatingEnabled, forKey: "floatingEnabled") } }
     @Published var selectionEnabled: Bool { didSet { defaults.set(selectionEnabled, forKey: "selectionEnabled") } }
+    @Published var wpsCopyCompatibilityEnabled: Bool { didSet { defaults.set(wpsCopyCompatibilityEnabled, forKey: "wpsCopyCompatibilityEnabled") } }
     @Published var hotkeysEnabled: Bool { didSet { defaults.set(hotkeysEnabled, forKey: "hotkeysEnabled") } }
     @Published var screenshotEnabled: Bool { didSet { defaults.set(screenshotEnabled, forKey: "screenshotEnabled") } }
     @Published var fontSize: Double { didSet { defaults.set(fontSize, forKey: "fontSize") } }
@@ -54,6 +55,7 @@ final class AppSettings: ObservableObject {
         }
         floatingEnabled = boolean("floatingEnabled", fallback: true)
         selectionEnabled = boolean("selectionEnabled", fallback: true)
+        wpsCopyCompatibilityEnabled = boolean("wpsCopyCompatibilityEnabled", fallback: true)
         hotkeysEnabled = boolean("hotkeysEnabled", fallback: true)
         screenshotEnabled = boolean("screenshotEnabled", fallback: true)
         fontSize = max(13, min(22, defaults.object(forKey: "fontSize") as? Double ?? 16))

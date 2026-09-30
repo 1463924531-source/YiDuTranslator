@@ -118,6 +118,32 @@ public enum SelectionReader {
         return try SelectionResolver(provider: AXSelectionProvider()).resolve()
     }
 
+    /// Capture on the synchronous shortcut stack, before opening or activating UI.
+    /// The optional WPS path is explicit and never runs for another application.
+    public static func prepareRequest(allowWPSCopy: Bool) throws -> SelectionReadRequest {
+        guard isTrusted else {
+            throw TranslatorError("请先在系统设置 → 隐私与安全性 → 辅助功能中允许译读读取所选文字，也可以直接粘贴文字。")
+        }
+        let provider = AXSelectionProvider()
+        guard let original = try provider.snapshot() else { return SelectionReadRequest() }
+        let sourceWasWPS = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == NativeWPSCopyEnvironment.bundleIdentifier
+        let environment = allowWPSCopy && sourceWasWPS ? NativeWPSCopyEnvironment(context: original) : nil
+        let copyEligible = try environment?.validateContext() == true
+        let text = try SelectionResolver(provider: provider).resolve()
+        // A timed-out AX lookup is not permission to copy. Use a fresh bounded
+        // provider solely to validate the context captured before the lookup.
+        guard provider.hasTime else { return SelectionReadRequest() }
+        guard try AXSelectionProvider().isCurrent(original) else { throw CancellationError() }
+        if copyEligible, try environment?.validateContext() != true { return SelectionReadRequest() }
+        if let text { return SelectionReadRequest(directText: text) }
+        guard copyEligible, let environment else { return SelectionReadRequest() }
+        return SelectionReadRequest(fallback: environment)
+    }
+
+    public static func selectedText(allowWPSCopy: Bool) async throws -> String? {
+        try await prepareRequest(allowWPSCopy: allowWPSCopy).resolve()
+    }
+
     /// AX text ranges are UTF-16 offsets. Reject invalid ranges and split surrogates.
     static func selectedSubstring(in text: String, range: CFRange) -> String? {
         let units = text.utf16

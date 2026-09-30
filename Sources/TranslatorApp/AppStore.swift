@@ -79,12 +79,14 @@ final class AppStore: ObservableObject {
     private var imageTask: Task<Void, Never>?
     private var captureTask: Task<Void, Never>?
     private var keyTestTask: Task<Void, Never>?
+    @Published private var selectionTask: Task<Void, Never>?
     private var requestID = UUID()
     private var explanationID = UUID()
     private var importID = UUID()
     private var documentID = UUID()
     private var imageID = UUID()
     private var keyTestID = UUID()
+    private var selectionID = UUID()
     private var speech = NSSpeechSynthesizer()
 
     init(settings: AppSettings, favorites: FavoritesStore) {
@@ -110,12 +112,19 @@ final class AppStore: ObservableObject {
     }
 
     func clearTranslation() {
+        cancelPendingSelection()
         cancelTranslation(); cancelExplanation(); cancelImageRecognition()
         input = ""; context = ""; result = ""; explanation = ""; followup = ""
         imageData = nil; usage = nil; resultRequest = nil; errorMessage = nil; notice = nil; recognizing = false
     }
 
     func paste() {
+        guard !hasPendingSelection else {
+            cancelPendingSelection()
+            notice = "正在结束取词，请稍后粘贴。"
+            return
+        }
+        cancelPendingSelection()
         guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else {
             errorMessage = "剪贴板里没有可粘贴的文字。"; return
         }
@@ -124,6 +133,7 @@ final class AppStore: ObservableObject {
     }
 
     func swapDirection() {
+        cancelPendingSelection()
         guard !busy else { return }
         let reusableResult = !result.isEmpty && !resultIsStale && resultRequest?.mode == .translate ? result : nil
         cancelExplanation(); cancelImageRecognition()
@@ -136,6 +146,7 @@ final class AppStore: ObservableObject {
     }
 
     func runTranslation(overrideMode: TranslationMode? = nil) {
+        cancelPendingSelection()
         let chosen = overrideMode ?? mode
         let source = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !source.isEmpty || (chosen == .imageExplain && imageData != nil) else {
@@ -260,28 +271,61 @@ final class AppStore: ObservableObject {
 
     func handleShortcut(_ action: HotkeyAction) {
         if action == .screenshot { captureScreenshot(); return }
-        var selected: String?
-        var failure: String?
-        if settings.selectionEnabled {
-            do { selected = try SelectionReader.selectedText() }
-            catch { failure = error.localizedDescription }
+        // Keep one selection transaction active until its clipboard cleanup completes.
+        guard selectionTask == nil, !capturing else { return }
+        let enabled = settings.selectionEnabled
+        let compatibilityEnabled = settings.wpsCopyCompatibilityEnabled
+        let originalInput = input
+        let id = UUID(); selectionID = id
+        var request: SelectionReadRequest?
+        var preparationFailure: String?
+        if enabled {
+            do { request = try SelectionReader.prepareRequest(allowWPSCopy: compatibilityEnabled) }
+            catch is CancellationError { return }
+            catch { preparationFailure = error.localizedDescription }
         }
-        clearTranslation()
-        mode = action == .dictionary ? .dictionary : .translate
-        section = .translation
-        if let selected { input = selected }
-        errorMessage = failure
-        if selected == nil && failure == nil { notice = settings.selectionEnabled ? "未读取到选中文字，可以直接输入或粘贴。" : "划词取词已关闭，可以直接输入或粘贴。" }
-        showResult?()
-        if selected != nil { runTranslation() }
+        selectionTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if selectionID == id { selectionTask = nil } }
+            var selected: String?
+            var failure = preparationFailure
+            do {
+                if let request { selected = try await request.resolve() }
+                try Task.checkCancellation()
+            } catch is CancellationError { return }
+            catch { failure = error.localizedDescription }
+            guard !Task.isCancelled, selectionID == id, input == originalInput,
+                  settings.selectionEnabled == enabled,
+                  settings.wpsCopyCompatibilityEnabled == compatibilityEnabled else { return }
+            // Only reveal the result after source selection and clipboard cleanup finish.
+            selectionTask = nil
+            clearTranslation()
+            mode = action == .dictionary ? .dictionary : .translate
+            section = .translation
+            if let selected { input = selected }
+            errorMessage = failure
+            if selected == nil && failure == nil {
+                notice = enabled ? "未读取到选中文字，可以直接输入或粘贴。" : "划词取词已关闭，可以直接输入或粘贴。"
+            }
+            showResult?()
+            if selected != nil { runTranslation() }
+        }
     }
+
+    func cancelPendingSelection() { selectionTask?.cancel() }
+    var hasPendingSelection: Bool { selectionTask != nil }
+    func waitForSelectionCleanup() async { await selectionTask?.value }
 
     func captureScreenshot() {
         guard settings.screenshotEnabled else { errorMessage = "截图功能已关闭，可以在设置中开启。"; return }
         guard !capturing else { return }
+        let previousSelection = selectionTask
+        cancelPendingSelection()
         capturing = true
         captureTask = Task { [weak self] in
             guard let self else { return }
+            await previousSelection?.value
+            guard !Task.isCancelled else { capturing = false; captureTask = nil; return }
             hideForCapture?()
             do {
                 try await Task.sleep(nanoseconds: 250_000_000)
@@ -547,6 +591,7 @@ final class AppStore: ObservableObject {
     }
 
     func shutdown() {
+        cancelPendingSelection()
         cancelTranslation(); cancelExplanation(); cancelDocument(); cancelImageRecognition(); captureTask?.cancel()
         keyTestID = UUID(); keyTestTask?.cancel(); keyTestTask = nil; testingKey = false; stopSpeaking()
     }

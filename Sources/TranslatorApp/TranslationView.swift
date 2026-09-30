@@ -137,7 +137,7 @@ struct TranslationView: View {
                 Button { store.speak(store.input) } label: { Image(systemName: "speaker.wave.2") }
                     .buttonStyle(.borderless).help("朗读原文").accessibilityLabel("朗读原文")
                     .disabled(store.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button("粘贴") { store.paste() }.buttonStyle(.borderless)
+                Button("粘贴") { store.paste() }.buttonStyle(.borderless).disabled(store.hasPendingSelection)
                 Button { store.clearTranslation() } label: { Image(systemName: "trash") }
                     .buttonStyle(.borderless).help("清空本次内容")
                     .disabled(store.input.isEmpty && store.result.isEmpty && store.imageData == nil)

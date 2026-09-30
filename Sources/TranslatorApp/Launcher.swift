@@ -36,6 +36,7 @@ final class TranslatorDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
     private var screenshotMenuItem: NSMenuItem?
     private var subscriptions = Set<AnyCancellable>()
     private var lastFloatingEnabled = true
+    private var awaitingSelectionShutdown = false
     private var isSmokeTest = CommandLine.arguments.contains("--smoke-test")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -103,6 +104,17 @@ final class TranslatorDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
     }
 
     func openMain() {
+        if store.hasPendingSelection {
+            store.cancelPendingSelection()
+            Task { [weak self] in
+                guard let self else { return }
+                await store.waitForSelectionCleanup()
+                guard !awaitingSelectionShutdown else { return }
+                openMain()
+            }
+            return
+        }
+        store.cancelPendingSelection()
         if mainWindow == nil { createMainWindow() }
         resultPanel?.orderOut(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -143,6 +155,18 @@ final class TranslatorDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
     }
 
     private func performLocalAction(_ action: HotkeyAction) {
+        guard !store.capturing else { return }
+        if store.hasPendingSelection {
+            store.cancelPendingSelection()
+            Task { [weak self] in
+                guard let self else { return }
+                await store.waitForSelectionCleanup()
+                guard !awaitingSelectionShutdown else { return }
+                performLocalAction(action)
+            }
+            return
+        }
+        store.cancelPendingSelection()
         guard action != .screenshot else { store.captureScreenshot(); return }
         store.cancelTranslation(); store.cancelExplanation()
         store.mode = action == .dictionary ? .dictionary : .translate
@@ -226,19 +250,46 @@ final class TranslatorDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
 
     @objc private func openFromMenu() { openMain() }
     @objc private func settingsFromMenu() { store.section = .settings; openMain() }
-    @objc private func documentFromMenu() { openMain(); store.chooseDocument() }
+    @objc private func documentFromMenu() {
+        guard !store.capturing else { return }
+        if store.hasPendingSelection {
+            store.cancelPendingSelection()
+            Task { [weak self] in
+                guard let self else { return }
+                await store.waitForSelectionCleanup()
+                guard !awaitingSelectionShutdown else { return }
+                documentFromMenu()
+            }
+            return
+        }
+        openMain(); store.chooseDocument()
+    }
     @objc private func captureFromMenu() { store.captureScreenshot() }
     @objc private func lookupFromMenu() { performLocalAction(.dictionary) }
     @objc private func translateFromMenu() { performLocalAction(.translate) }
     @objc private func quitFromMenu() { NSApp.terminate(nil) }
     @objc private func aboutFromMenu() {
-        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "译读", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.1",
+        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "译读", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.2",
             .credits: NSAttributedString(string: "为雅思学习与论文阅读准备的 Mac 翻译助手。\nDeepSeek V4.1 Flash · 只保存主动收藏的内容。")])
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { openMain(); return true }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationDidBecomeActive(_ notification: Notification) { store.refreshPermissions() }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard store.hasPendingSelection else { return .terminateNow }
+        if !awaitingSelectionShutdown {
+            awaitingSelectionShutdown = true
+            hotkeys.unregisterAll()
+            store.shutdown()
+            Task { [weak self] in
+                guard let self else { sender.reply(toApplicationShouldTerminate: true); return }
+                await store.waitForSelectionCleanup()
+                sender.reply(toApplicationShouldTerminate: true)
+            }
+        }
+        return .terminateLater
+    }
     func applicationWillTerminate(_ notification: Notification) { hotkeys.unregisterAll(); store.shutdown() }
-    func windowWillClose(_ notification: Notification) { store.stopSpeaking() }
+    func windowWillClose(_ notification: Notification) { store.cancelPendingSelection(); store.stopSpeaking() }
 }

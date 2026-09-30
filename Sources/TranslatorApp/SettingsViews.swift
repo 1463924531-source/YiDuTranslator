@@ -162,6 +162,13 @@ struct AppSettingsView: View {
                     Text("按快捷键时读取选中文字。关闭后打开手动输入，不读取选区或旧剪贴板。").font(.caption).foregroundStyle(.secondary)
                 }
             }
+            Toggle(isOn: $settings.wpsCopyCompatibilityEnabled) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("WPS 兼容取词")
+                    Text("直接取词失败时，按快捷键临时复制 WPS 选区，读完恢复原剪贴板。期间另行复制的内容会保留。").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .disabled(!settings.selectionEnabled)
             Toggle(isOn: $settings.screenshotEnabled) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("截图与图片输入")

@@ -10,9 +10,13 @@ fi
 if [ ! -f "$source_bundle/Contents/MacOS/YiDuTranslator" ]; then
   /bin/bash "$project_root/scripts/build.sh"
 fi
-/usr/bin/xattr -r -d com.apple.FinderInfo "$source_bundle" 2>/dev/null || true
-/usr/bin/xattr -r -d com.apple.ResourceFork "$source_bundle" 2>/dev/null || true
-/usr/bin/codesign --verify --strict "$source_bundle"
+stage_root="$(/usr/bin/mktemp -d /private/tmp/yidu-install.XXXXXX)"
+trap '/bin/rm -rf "$stage_root"' EXIT
+stage_bundle="$stage_root/译读.app"
+# Documents/FileProvider can reattach FinderInfo after a source bundle is signed.
+# Copy without source metadata, then verify the exact bundle that will be installed.
+/usr/bin/ditto --norsrc --noextattr "$source_bundle" "$stage_bundle"
+/usr/bin/codesign --verify --strict "$stage_bundle"
 identity_changed=false
 if [ -e "$destination" ]; then
   existing_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$destination/Contents/Info.plist" 2>/dev/null || true)"
@@ -21,10 +25,10 @@ if [ -e "$destination" ]; then
     exit 1
   fi
   existing_requirement="$(/usr/bin/codesign -d -r- "$destination" 2>&1 | /usr/bin/sed -n 's/^.*designated => //p')"
-  incoming_requirement="$(/usr/bin/codesign -d -r- "$source_bundle" 2>&1 | /usr/bin/sed -n 's/^.*designated => //p')"
+  incoming_requirement="$(/usr/bin/codesign -d -r- "$stage_bundle" 2>&1 | /usr/bin/sed -n 's/^.*designated => //p')"
   if [ "$existing_requirement" != "$incoming_requirement" ]; then identity_changed=true; fi
 fi
-/usr/bin/ditto --norsrc --noextattr "$source_bundle" "$destination"
+/usr/bin/ditto --norsrc --noextattr "$stage_bundle" "$destination"
 /usr/bin/xattr -r -d com.apple.FinderInfo "$destination" 2>/dev/null || true
 /usr/bin/xattr -r -d com.apple.ResourceFork "$destination" 2>/dev/null || true
 /usr/bin/codesign --verify --strict "$destination"
